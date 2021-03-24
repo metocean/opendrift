@@ -445,8 +445,8 @@ class PelagicPlanktonDrift(OceanDrift):
                   logger.debug('Minimum temperature reached for %s particles' % np.sum(m>0))
                 self.elements.survival -= np.maximum(np.minimum(m,1),0)*self.elements.survival # https://github.com/metocean/ercore/blob/ercore_nc/ercore/materials/biota.py#L65
 
-          m=(self.props['tempmin']+self.props['temptol']-temp)/self.props['temptol']
-          self.mass[:np]-=numpy.maximum(numpy.minimum(m,1),0)*self.mass[:np]
+        m=(self.props['tempmin']+self.props['temptol']-temp)/self.props['temptol']
+        self.mass[:np]-=numpy.maximum(numpy.minimum(m,1),0)*self.mass[:np]
 
 
         # print('TEMP')
