@@ -54,10 +54,25 @@ class Reader(BaseReader, ContinuousReader):
         self.proj4 = proj4_str 
         self.crs = pyproj.CRS(self.proj4)
 
-        super(Reader, self).__init__()
-        shore = np.loadtxt(
-            polygon_file)  # nan-delimited closed polygons for land and islands
-
+        super (Reader, self).__init__ ()
+        
+        shore = np.loadtxt(polygon_file) # nan-delimited closed polygons for land and islands 
+        
+        if 'lonlat' not in proj4_str: # not functional yet - polygons must be in wgs84 for now   
+            print('custom landmask polygon must be in WGS84 coordinates..for now')
+            # if not in wgs84 coordinates already, convert now to lon,lat
+            xx,yy = self.xy2lonlat(shore[:,0], shore[:,1])
+            xx[np.where(np.isinf(xx))] = np.nan
+            yy[np.where(np.isinf(yy))] = np.nan
+            # update the shore polygon
+            shore[:,0]=xx.copy()
+            shore[:,1]=yy.copy()
+            # update the projection
+            self.proj4 = '+proj=lonlat +ellps=WGS84'
+            self.crs = pyproj.CRS(self.proj4)
+            # this doesnt work because self.proj.crs.is_geographic remains false in basereader.py 
+            # not sure why/how ?
+        
         # Depth
         self.z = None
         self.xmin, self.ymin = np.nanmin(shore[:, 0]), np.nanmin(shore[:, 1])
