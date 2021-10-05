@@ -7,20 +7,7 @@ from opendrift.readers import reader_shape
 import cartopy.io.shapereader as shpreader
 import urllib.error
 
-has_ne_shapes = False
-try:
-    shpreader.natural_earth(resolution='110m',
-                            category='cultural',
-                            name='admin_0_countries')
-    has_ne_shapes = True
-except urllib.error.URLError:
-    has_ne_shapes = False
-
-need_ne_shapes = pytest.mark.skipif(has_ne_shapes == False,
-                                    reason='Natural Earth shapes are not available.')
-
-
-@need_ne_shapes
+@pytest.mark.skip(reason="Links for naciscdn.org servers are broken in Cartopy<0.20")
 def test_on_land():
     shpfilename = shpreader.natural_earth(resolution='110m',
                                           category='cultural',
@@ -30,8 +17,7 @@ def test_on_land():
     assert r.__on_land__(np.array([10]), np.array([60])) == [True]
     assert r.__on_land__(np.array([5]), np.array([60])) == [False]
 
-
-@need_ne_shapes
+@pytest.mark.skip(reason="Links for naciscdn.org servers are broken in Cartopy<0.20")
 def test_global_array(test_data):
     shpfilename = shpreader.natural_earth(resolution='110m',
                                           category='cultural',
