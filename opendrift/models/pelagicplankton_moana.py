@@ -139,6 +139,7 @@ class PelagicPlanktonDrift(OceanDrift):
         'turbulent_kinetic_energy': {'fallback': 0},
         'turbulent_generic_length_scale': {'fallback': 0},
         'upward_sea_water_velocity': {'fallback': 0},
+        'ocean_mixed_layer_thickness': {'fallback': 50},
       }
 
     # The depth range (in m) which profiles shall cover
