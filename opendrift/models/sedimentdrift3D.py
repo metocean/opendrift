@@ -19,6 +19,7 @@ import numpy as np
 import logging; logger = logging.getLogger(__name__)
 from opendrift.models.oceandrift import OceanDrift
 from opendrift.models.oceandrift import Lagrangian3DArray
+from opendrift.config import CONFIG_LEVEL_ESSENTIAL, CONFIG_LEVEL_BASIC, CONFIG_LEVEL_ADVANCED
 
 class SedimentElement(Lagrangian3DArray):
     # Lagrangian3DArray has already the variables terminal_velocity, and wind_drift_factor
@@ -71,6 +72,7 @@ class SedimentDrift3D(OceanDrift): # based on OceanDrift base class
         'sea_surface_wave_mean_period_from_variance_spectral_density_second_frequency_moment': {'fallback': 0},
         'land_binary_mask': {'fallback': None},
         'ocean_vertical_diffusivity': {'fallback': 0.02, 'profiles': True},
+        'ocean_mixed_layer_thickness': {'fallback': 50},
         'sea_floor_depth_below_sea_level': {'fallback': 0},
         # 'sea_water_temperature': {'fallback': 15., 'profiles': True},
         # 'sea_water_salinity': {'fallback': 35., 'profiles': True},
@@ -91,16 +93,16 @@ class SedimentDrift3D(OceanDrift): # based on OceanDrift base class
             'drift:resuspension': {'type': 'bool', 'default': False,
                 # 'min': 0, 'max': 1e10, 'units': '-',
                 'description': 'switch to activate/deactivate resuspension',
-                'level': self.CONFIG_LEVEL_ESSENTIAL},
+                'level': CONFIG_LEVEL_ESSENTIAL},
 
             'processes:update_terminal_velocity': {'type': 'bool', 'default': False,
                 'description': 'switch to activate "online" terminal velocity calculation based on ambient settings at each time step.\
                  If set to False, terminal_velocity is kept constant with value provided at seeding.',
-                'level': self.CONFIG_LEVEL_ADVANCED},
+                'level': CONFIG_LEVEL_ADVANCED},
 
             'processes:terminal_velocity_method': {'type': 'enum', 'enum': ['dietrich','stokes','zhiyao','ahrens','komar','van_rijn1984','soulsby1997'], 'default': 'zhiyao',
                 'description': 'selection of equations used for calculating the particle''s terminal_velocity',
-                'level': self.CONFIG_LEVEL_ADVANCED},
+                'level': CONFIG_LEVEL_ADVANCED},
                 })
 
         # By default, sediments do strand at coastline
@@ -254,7 +256,7 @@ class SedimentDrift3D(OceanDrift): # based on OceanDrift base class
         """
 
         if self.get_config('drift:resuspension') is True:
-            self.set_config('general:seafloor_action', 'lift_to_seafloor')
+            #self._set_config_default('general:seafloor_action', 'lift_to_seafloor')
             logger.debug('Sediemnt resuspension physics included : drift:resuspension == True')
             # 1-compute bed shear stresses at particle locations
             tau_cw,tau_cw_max = self.bedshearstress_current_wave()
