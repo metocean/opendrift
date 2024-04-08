@@ -74,7 +74,7 @@ class SedimentDrift3D(OceanDrift): # based on OceanDrift base class
         'land_binary_mask': {'fallback': None},
         'ocean_vertical_diffusivity': {'fallback': 0.02, 'profiles': True},
         'ocean_mixed_layer_thickness': {'fallback': 50},
-        'sea_floor_depth_below_sea_level': {'fallback': 10000},
+        'sea_floor_depth_below_sea_level': {'fallback': 0},
         # 'sea_water_temperature': {'fallback': 15., 'profiles': True},
         # 'sea_water_salinity': {'fallback': 35., 'profiles': True},
         'sea_water_temperature': {'fallback': 15.},
@@ -257,7 +257,7 @@ class SedimentDrift3D(OceanDrift): # based on OceanDrift base class
         """
 
         if self.get_config('drift:resuspension') is True:
-            self.set_config('general:seafloor_action', 'lift_to_seafloor')
+            #self._set_config_default('general:seafloor_action', 'lift_to_seafloor')
             logger.debug('Sediemnt resuspension physics included : drift:resuspension == True')
             # 1-compute bed shear stresses at particle locations
             tau_cw,tau_cw_max = self.bedshearstress_current_wave()
