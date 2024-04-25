@@ -1,4 +1,4 @@
-name: opendrift_simon
+name: base
 channels:
   - conda-forge
 dependencies:
@@ -36,6 +36,9 @@ dependencies:
   - ipykernel
   - copernicusmarine
   - pip
+  - geopandas
   - oceantide
-  - futures
+  - pip:
+    - motuclient
+    - pytest-sphinx
     - future
