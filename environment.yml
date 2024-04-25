@@ -1,4 +1,4 @@
-name: opendrift_simon
+name: base
 channels:
   - conda-forge
 dependencies:
@@ -35,6 +35,7 @@ dependencies:
   - scikit-learn
   - ipykernel
   - pip
+  - geopandas
   - pip:
     - motuclient
     - pytest-sphinx
