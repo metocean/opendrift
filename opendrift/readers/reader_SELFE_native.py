@@ -111,7 +111,7 @@ class Reader(BaseReader,UnstructuredReader):
             'zcor' : 'vertical_levels', # time-varying vertical coordinates
             'siglay': 'ocean_s_coordinate',
             'vert' : 'upward_sea_water_velocity',
-            # 'wetdry_elem': 'land_binary_mask',
+            'h': 'land_binary_mask',
             'U_wind' : 'x_wind',
             'V_wind' : 'y_wind' }
             # diffusivity
@@ -243,12 +243,9 @@ class Reader(BaseReader,UnstructuredReader):
         # Find x, y and z coordinates
         for var_name in self.dataset.variables:
 
-            if var_name in ['SCHISM_hgrid_face_x',
-                            'SCHISM_hgrid_face_y',
-                            'SCHISM_hgrid_edge_x',
-                            'SCHISM_hgrid_edge_y',
-                            'longitude', # make sure we skip any longitude/latitude added to file, i.e. use only (SCHISM_hgrid_node_x,SCHISM_hgrid_node_y)
-                            'latitude']:
+            if var_name in ['lon',
+                            'lat',
+                            ]:
                 # all these variables have the same standard name projection_x_coordinate,projection_y_coordinate
                 # we need to only use :
                 # SCHISM_hgrid_node_x as projection_x_coordinate
@@ -358,7 +355,7 @@ class Reader(BaseReader,UnstructuredReader):
         self.y = y
         
         if not (self.x>360.).any() and self.use_3d :
-            logger.debug('Native coordinates in SCHISM outputs (SCHISM_hgrid_node_x,SCHISM_hgrid_node_y) are in lon/lat (WGS84)')
+            logger.debug('Native coordinates in SELFE outputs (lon,lat) are in lon/lat (WGS84)')
             logger.debug('Converting to user-defined proj4 defined when initialising reader : %s' % self.proj4)
             # The 3D interpolation doesnt work directly if the x,y coordinates in native netcdf files
             # are not cartesian but geographic. In that case, when doing 3D interpolation and tree search, 
@@ -407,19 +404,19 @@ class Reader(BaseReader,UnstructuredReader):
                 # will be mapped to same name. Correct data will be then extracted
                 # in get_variables()
                 # 
-                if var_name == 'hvel' and self.use_3d : # then use 3d data
-                    self.variable_mapping['x_sea_water_velocity'] = str(var_name)
-                    self.variable_mapping['y_sea_water_velocity'] = str(var_name)   
-                elif var_name == 'hvel' and not self.use_3d: # skip
+                if 'hvel' in var_name and self.use_3d : # then use 3d data
+                    self.variable_mapping['x_sea_water_velocity'] = 'U_hvel'
+                    self.variable_mapping['y_sea_water_velocity'] = 'V_hvel'   
+                elif 'hvel' in var_name and not self.use_3d: # skip
                     pass
-                elif var_name == 'dahv' and self.use_3d : # skip
+                elif 'dahv' in var_name and self.use_3d : # skip
                     pass   
-                elif var_name == 'dahv' and not self.use_3d: # then use depth-averaged data
-                    self.variable_mapping['x_sea_water_velocity'] = str(var_name)
-                    self.variable_mapping['y_sea_water_velocity'] = str(var_name)
-                elif var_name == 'wind_speed' : # wind speed vectors
-                    self.variable_mapping['x_wind'] = str(var_name)
-                    self.variable_mapping['y_wind'] = str(var_name)                  
+                elif 'dahv' in var_name and not self.use_3d: # then use depth-averaged data
+                    self.variable_mapping['x_sea_water_velocity'] = 'U_dahv'
+                    self.variable_mapping['y_sea_water_velocity'] = 'V_dahv'
+                # elif var_name == 'wind_speed' : # wind speed vectors
+                #     self.variable_mapping['x_wind'] = str(var_name)
+                #     self.variable_mapping['y_wind'] = str(var_name)                  
                 else: # standard mapping                                    
                     self.variable_mapping[schism_mapping[var_name]] = \
                         str(var_name) 
@@ -495,7 +492,7 @@ class Reader(BaseReader,UnstructuredReader):
 
         # extracts the full slices of requested_variables at time indxTime
         for par in requested_variables:
-            if par not in ['x_sea_water_velocity','y_sea_water_velocity','land_binary_mask','x_wind','y_wind'] :
+            if par not in ['land_binary_mask'] :
                 # standard case - for all variables except vectors such as current, wind, etc..
                 var = self.dataset.variables[self.variable_mapping[par]]
                 if var.ndim == 1:
@@ -513,30 +510,32 @@ class Reader(BaseReader,UnstructuredReader):
                 else:
                     raise ValueError('Wrong dimension of %s: %i' %
                                      (self.variable_mapping[par], var.ndim))
-            elif par in ['x_sea_water_velocity','y_sea_water_velocity','x_wind','y_wind'] :
-                # requested variables are vectors : current or wind velocities
-                # In SCHISM netcdf files, both [u,v] components are saved 
-                # as two different dimensions of the same variable.
-                var = self.dataset.variables[self.variable_mapping[par]]
-                if var.ndim == 3: # depth-averaged current data 'dahv', or 'wind_speed' defined at each node and time [time,node,2]
-                    if par in ['x_sea_water_velocity','x_wind']:
-                       data = var[indxTime,:,0]
-                    elif par in ['y_sea_water_velocity','y_wind']:
-                       data = var[indxTime,:,1] 
-                    logger.debug('reading 2D velocity data from unstructured reader %s' % (par))
+            # elif par in ['x_sea_water_velocity','y_sea_water_velocity','x_wind','y_wind'] :
+            #     # requested variables are vectors : current or wind velocities
+            #     # In SCHISM netcdf files, both [u,v] components are saved 
+            #     # as two different dimensions of the same variable.
+            #     var = self.dataset.variables[self.variable_mapping[par]]
+            #     if var.ndim == 3: # depth-averaged current data 'dahv', or 'wind_speed' defined at each node and time [time,node,2]
+            #         if par in ['x_sea_water_velocity','x_wind']:
+            #            data = var[indxTime,:,0]
+            #         elif par in ['y_sea_water_velocity','y_wind']:
+            #            data = var[indxTime,:,1] 
+            #         logger.debug('reading 2D velocity data from unstructured reader %s' % (par))
 
-                elif var.ndim == 4: # #3D current data 'hvel' defined at each node, level, and time [time,node,zcor,2]
-                    if par == 'x_sea_water_velocity':
-                       data = var[indxTime,:,:,0]   #hvel dimensions : [time,node,lev,2]
-                    elif par == 'y_sea_water_velocity':
-                       data = var[indxTime,:,:,1] #hvel dimensions : [time,node,lev,2]
-                    logger.debug('reading 3D velocity data from unstructured reader %s' % (par))
+            #     elif var.ndim == 4: # #3D current data 'hvel' defined at each node, level, and time [time,node,zcor,2]
+            #         if par == 'x_sea_water_velocity':
+            #            data = var[indxTime,:,:,0]   #hvel dimensions : [time,node,lev,2]
+            #         elif par == 'y_sea_water_velocity':
+            #            data = var[indxTime,:,:,1] #hvel dimensions : [time,node,lev,2]
+            #         logger.debug('reading 3D velocity data from unstructured reader %s' % (par))
 
-                    # convert 3D data matrix to one column array and define corresponding data coordinates [x,y,z]
-                    # (+ update variables dictionary with 3d coords if needed)
-                    data,variables = self.convert_3d_to_array(indxTime,data,variables)
+            #         # convert 3D data matrix to one column array and define corresponding data coordinates [x,y,z]
+            #         # (+ update variables dictionary with 3d coords if needed)
+            #         data,variables = self.convert_3d_to_array(indxTime,data,variables)
 
             elif (par in ['land_binary_mask']) & (self.use_model_landmask) :
+                import pdb;pdb.set_trace()
+                dry_elem = self.dataset.variables[self.variable_mapping[par]]
                 dry_elem = self.dataset.variables[self.variable_mapping[par]][indxTime,:] # dry_elem =1 if dry, 0 if wet, for each element face
                 # find indices of nodes making up the dry elements
                 if len(self.dataset['SCHISM_hgrid_face_nodes'].shape) == 3:
@@ -1108,10 +1107,10 @@ class Reader(BaseReader,UnstructuredReader):
             import pdb;pdb.set_trace()
             import matplotlib.tri as mtri
             from mpl_toolkits.mplot3d import Axes3D
-            X=self.dataset.variables['SCHISM_hgrid_node_x'][:]
-            Y=self.dataset.variables['SCHISM_hgrid_node_y'][:]
-            Z=self.dataset.variables['depth'][:]
-            face=self.dataset.variables['SCHISM_hgrid_face_nodes'][:,0:3]-1
+            X=self.dataset.variables['lon'][:]
+            Y=self.dataset.variables['lat'][:]
+            Z=self.dataset.variables['h'][:]
+            #face=self.dataset.variables['SCHISM_hgrid_face_nodes'][:,0:3]-1
             # build triangulation
             triang =mtri.Triangulation(X,Y, triangles=face, mask=None)
             # quads=Triangulation(gr.x,gr.y,quads)
