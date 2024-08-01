@@ -57,11 +57,11 @@ from opendrift.readers.basereader import BaseReader, UnstructuredReader
 from opendrift.readers.basereader.consts import *
 import xarray as xr
 import shapely
-
+import pandas as pd
 
 class Reader(BaseReader,UnstructuredReader):
 
-    def __init__(self, filename=None, name=None, proj4=None, use_3d = None , use_model_landmask = False,**kwargs):
+    def __init__(self, filename=None, name=None, proj4=None, use_3d = None , use_model_landmask = False, ini_date = None, **kwargs):
         """Initialise reader_netCDF_CF_unstructured_SCHISM
 
         Args:
@@ -83,6 +83,7 @@ class Reader(BaseReader,UnstructuredReader):
                                   (False by default)
             kwargs      : shore_file , allows adding a shoreline file that will be used alongside model 
                           landmask to flag particles on land in _get_variables_interpolated_()
+                          year, allows year
                           Required in some cases to avoid particles going on land
                           Note this file should be one or several closed polygon(s) reprensenting land area
         """
@@ -93,7 +94,6 @@ class Reader(BaseReader,UnstructuredReader):
             self.name = filestr
         else:
             self.name = name
-
         # Default interpolation method, see function interpolate_block()
         self.interpolation = 'linearNDFast'
         self.convolve = None  # Convolution kernel or kernel size
@@ -111,7 +111,7 @@ class Reader(BaseReader,UnstructuredReader):
             'zcor' : 'vertical_levels', # time-varying vertical coordinates
             'siglay': 'ocean_s_coordinate',
             'vert' : 'upward_sea_water_velocity',
-            'h': 'land_binary_mask',
+            'wetdry_elem': 'land_binary_mask',
             'U_wind' : 'x_wind',
             'V_wind' : 'y_wind' }
             # diffusivity
@@ -175,13 +175,19 @@ class Reader(BaseReader,UnstructuredReader):
             #   WWM_28  = 0 !Rougness length
 
         self.return_block = True
-
         try:
             # Open file, check that everything is ok
             logger.info('Opening dataset: ' + filestr)
             if ('*' in filestr) or ('?' in filestr) or ('[' in filestr):
                 logger.info('Opening files with open_mfdataset')
-                self.dataset = xr.open_mfdataset(filename,chunks={'time': 1}).drop_duplicates(dim = 'time', keep='last')
+                try:
+                    self.dataset = xr.open_mfdataset(filename,chunks={'time': 1}).drop_duplicates(dim = 'time', keep='last')
+                except:
+                    self.dataset = xr.open_mfdataset(filename, decode_times=False,chunks={'time': 1}).drop_duplicates(dim = 'time', keep='last')
+                    if ini_date:
+                        epoch = pd.Timestamp(ini_date)
+                        self.dataset['time'] = pd.to_datetime(self.dataset['time'].values, unit='s', origin=epoch)
+
                 # Note the <.drop_duplicates(dim = 'time', keep='last')> is particulary important
                 # when running with daily averaged data.
                 # If data was downloaded in daily files, each daily-averaged file will have 2 timesteps [t0, t0+1day]; 
@@ -197,8 +203,18 @@ class Reader(BaseReader,UnstructuredReader):
                 # ordered_filelist_1.sort()
             else:
                 logger.info('Opening file with dataset')
-                self.dataset = xr.open_dataset(filename,chunks={'time': 1})
-
+                try:
+                    self.dataset = xr.open_dataset(filename,chunks={'time': 1})
+                except:
+                    self.dataset = xr.open_dataset(filename, decode_times=False,chunks={'time': 1})
+                    if ini_date:
+                        epoch = pd.Timestamp(ini_date)
+                        self.dataset['time'] = pd.to_datetime(self.dataset['time'].values, unit='s', origin=epoch)
+                    if 'wetdry_elem' not in self.dataset.variables:
+                        logger.debug('No wetdry_elem variable in file, adding a dummy variable')
+                        self.dataset['wetdry_elem'] = (('node',), np.zeros(self.dataset['h'].shape))
+                        self.dataset['wetdry_elem'][np.where(self.dataset['h']<=0)] = 1
+                        self.dataset['wetdry_elem'][np.where(self.dataset['h']>0)] = 0
         except Exception as e:
             raise ValueError(e)
 
@@ -216,16 +232,16 @@ class Reader(BaseReader,UnstructuredReader):
         # check if 3d data is available and if we should use it
         self.use_3d = use_3d
         if self.use_3d is None : # not specified, use 3d data by default (if available)
-            if 'hvel' in self.dataset.variables:
+            if 'U_hvel' in self.dataset.variables:
                 self.use_3d = True
             else:
                 self.use_3d = False
 
-        if self.use_3d and 'hvel' not in self.dataset.variables:
+        if self.use_3d and 'U_hvel' and 'V_hvel' not in self.dataset.variables:
             logger.debug('No 3D velocity data in file - cannot find variable ''hvel'' ')
-        elif self.use_3d and 'hvel' in self.dataset.variables:
+        elif self.use_3d and 'U_hvel' and 'V_hvel' in self.dataset.variables:
             if 'zcor' in self.dataset.variables: # both hvel and zcor in files - all good
-                self.nb_levels = self.dataset.variables['hvel'].shape[2] #hvel dimensions : [time,node,lev,2]
+                self.nb_levels = self.dataset.variables['U_hvel'].shape[1] #hvel dimensions : [time,node,lev,2]
             else:
                 logger.debug('No vertical level information present in file ''zcor'' ... stopping')
                 raise ValueError('variable ''zcor'' must be present in netcdf file to be able to use 3D currents')
@@ -234,6 +250,7 @@ class Reader(BaseReader,UnstructuredReader):
         self.use_model_landmask = use_model_landmask
         if self.use_model_landmask : 
             logger.debug('Using time-varying landmask from SCHISM for on-land particles checks (wetdry_elem variable) ')
+            #self.activate_environment_mapping('land_binary_mask_from_ocean_depth')
             if 'shore_file' in kwargs:
                 logger.debug('Also adding static shoreline file %s for additionnal on-land particles' %  kwargs['shore_file'])
                 self.shore_file = kwargs['shore_file']
@@ -243,15 +260,15 @@ class Reader(BaseReader,UnstructuredReader):
         # Find x, y and z coordinates
         for var_name in self.dataset.variables:
 
-            if var_name in ['lon',
-                            'lat',
-                            ]:
-                # all these variables have the same standard name projection_x_coordinate,projection_y_coordinate
-                # we need to only use :
-                # SCHISM_hgrid_node_x as projection_x_coordinate
-                # SCHISM_hgrid_node_y as projection_y_coordinate
-                # which are the nodes (also called vertices)
-                continue
+            # if var_name in ['lon',
+            #                 'lat',
+            #                 ]:
+            #     # all these variables have the same standard name projection_x_coordinate,projection_y_coordinate
+            #     # we need to only use :
+            #     # SCHISM_hgrid_node_x as projection_x_coordinate
+            #     # SCHISM_hgrid_node_y as projection_y_coordinate
+            #     # which are the nodes (also called vertices)
+            #     continue
 
             var = self.dataset.variables[var_name]
 
@@ -388,8 +405,17 @@ class Reader(BaseReader,UnstructuredReader):
         # Find all variables having standard_name
         self.variable_mapping = {}
         for var_name in self.dataset.variables:
+            # import pdb;pdb.set_trace()
             if var_name in [self.xname, self.yname]: #'depth'
                 continue  # Skip coordinate variables
+            # if (var_name == 'h') and (not 'wetdry' in self.dataset.variables):
+            #     # import pdb;pdb.set_trace()
+            #     h = self.dataset.variables[var_name]
+            #     self.dataset['wetdry'] = (('node',), np.zeros(h.shape))
+            #     self.dataset['wetdry'][np.where(h<=0)] = 1
+            #     self.dataset['wetdry'][np.where(h>0)] = 0
+            #     self.variable_mapping[schism_mapping['wetdry']] = 'wetdry'
+                
             var = self.dataset.variables[var_name]
             attributes = var.attrs
             att_dict = var.attrs
@@ -416,8 +442,10 @@ class Reader(BaseReader,UnstructuredReader):
                     self.variable_mapping['y_sea_water_velocity'] = 'V_dahv'
                 # elif var_name == 'wind_speed' : # wind speed vectors
                 #     self.variable_mapping['x_wind'] = str(var_name)
-                #     self.variable_mapping['y_wind'] = str(var_name)                  
-                else: # standard mapping                                    
+                #     self.variable_mapping['y_wind'] = str(var_name)        
+                # elif 'h' in var_name and : # depth          
+                else: # standard mapping       
+                    # import pdb;pdb.set_trace()                             
                     self.variable_mapping[schism_mapping[var_name]] = \
                         str(var_name) 
                    
@@ -534,9 +562,9 @@ class Reader(BaseReader,UnstructuredReader):
             #         data,variables = self.convert_3d_to_array(indxTime,data,variables)
 
             elif (par in ['land_binary_mask']) & (self.use_model_landmask) :
-                import pdb;pdb.set_trace()
+                #import pdb;pdb.set_trace()
                 dry_elem = self.dataset.variables[self.variable_mapping[par]]
-                dry_elem = self.dataset.variables[self.variable_mapping[par]][indxTime,:] # dry_elem =1 if dry, 0 if wet, for each element face
+                #dry_elem = self.dataset.variables[self.variable_mapping[par]][indxTime,:] # dry_elem =1 if dry, 0 if wet, for each element face
                 # find indices of nodes making up the dry elements
                 if len(self.dataset['SCHISM_hgrid_face_nodes'].shape) == 3:
                     # when using open_mfdataset, the variable is expanded along time dimension, hence use of indxTime shape = (nb_time,nb_elem,4)
@@ -581,14 +609,15 @@ class Reader(BaseReader,UnstructuredReader):
         '''
 
         try:
-            vertical_levels = self.dataset.variables['zcor'][id_time,:,:]
+            # import pdb;pdb.set_trace()
+            vertical_levels = self.dataset.variables['zcor'][id_time,:,:].T # dimensions [node,vertical_levels]
             # depth are negative down consistent with convention used in OpenDrift 
             # if using the netCDF4 library, vertical_levels is masked array where "masked" levels are those below seabed  (= 9.9692100e+36)
             # if using the xarray library, vertical_levels is nan for levels are those below seabed
 
             # convert to masked array to be consistent with what netCDF4 lib returns
             vertical_levels = np.ma.array(vertical_levels, mask = np.isnan(vertical_levels.data)) 
-            data = np.asarray(data)
+            data = np.asarray(data.T)
             # vertical_levels.mask = np.isnan(vertical_levels.data) # masked using nan's when using xarray
         except:
             logger.debug('no vertical level information present in file ''zcor'' ... stopping')
