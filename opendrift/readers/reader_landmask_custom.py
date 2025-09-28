@@ -18,7 +18,7 @@
 
 from opendrift.readers.basereader import BaseReader, ContinuousReader
 import pyproj
-from shapely.geometry import Polygon, MultiPolygon, asPolygon
+from shapely.geometry import Polygon, MultiPolygon #, asPolygon
 import shapely
 import shapely.vectorized
 import numpy as np
@@ -94,7 +94,7 @@ class Reader(BaseReader, ContinuousReader):
             # The shapely.geometry.asShape() family of functions can be used to wrap Numpy coordinate arrays
             # https://shapely.readthedocs.io/en/latest/manual.html
             poly.append(
-                asPolygon(shore[id_nans[cnt] + 1:id_nans[cnt + 1] - 1, :]))
+                Polygon(shore[id_nans[cnt] + 1:id_nans[cnt + 1] - 1, :]))
         # We can pass multiple Polygon -objects into our MultiPolygon as a list
         self.mask = MultiPolygon(poly)
         self.mask = shapely.prepared.prep(self.mask)

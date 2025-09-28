@@ -186,6 +186,7 @@ class Reader(BaseReader,UnstructuredReader):
                     self.dataset = xr.open_mfdataset(filename, decode_times=False,chunks={'time': 1}).drop_duplicates(dim = 'time', keep='last')
                     if ini_date:
                         epoch = pd.Timestamp(ini_date)
+                        import pdb;pdb.set_trace()
                         self.dataset['time'] = pd.to_datetime(self.dataset['time'].values, unit='s', origin=epoch)
 
                 # Note the <.drop_duplicates(dim = 'time', keep='last')> is particulary important
