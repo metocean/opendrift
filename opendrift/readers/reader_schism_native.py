@@ -1051,7 +1051,7 @@ class Reader(BaseReader,UnstructuredReader):
         # load shoreline polygon is added by user,used for additional on-land checks
         #  must be in wgs84
         # see reader_landmask_custom.py
-        from shapely.geometry import Polygon, MultiPolygon, asPolygon
+        from shapely.geometry import Polygon, MultiPolygon
         import shapely
 
         shore = np.loadtxt(
@@ -1070,7 +1070,7 @@ class Reader(BaseReader,UnstructuredReader):
             # The shapely.geometry.asShape() family of functions can be used to wrap Numpy coordinate arrays
             # https://shapely.readthedocs.io/en/latest/manual.html
             poly.append(
-                asPolygon(shore[id_nans[cnt] + 1:id_nans[cnt + 1] - 1, :]))
+                Polygon(shore[id_nans[cnt] + 1:id_nans[cnt + 1] - 1, :]))
         # We can pass multiple Polygon -objects into our MultiPolygon as a list
         landmask = MultiPolygon(poly)
         # check plot
