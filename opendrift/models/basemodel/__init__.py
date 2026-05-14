@@ -23,6 +23,9 @@ import traceback
 import inspect
 import logging
 import psutil
+import contextily as ctx
+import geopandas as gpd
+from shapely.geometry import Point
 
 from opendrift.models.basemodel.environment import Environment
 from opendrift.readers import reader_global_landmask
@@ -2526,6 +2529,115 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
 
         return fig, ax, crs, lons.T, lats.T, index_of_first, index_of_last
 
+    def set_up_map_ctx(self,
+               corners=None,
+               buffer=0.1,
+               delta_lat=None,
+               lscale=None,
+               fast=False,
+               hide_landmask=False,
+               **kwargs):
+        """
+        Generate Figure instance on which trajectories are plotted using Contextily.
+        Compatible return signature with the original Cartopy version.
+        """
+
+        # ---- 1. Determine lon/lat bounds ---------------------------------
+        if hasattr(self, 'ds'):
+            lons = self.ds.lon
+            lats = self.ds.lat
+            lonmin, lonmax = np.nanmin(lons), np.nanmax(lons)
+            latmin, latmax = np.nanmin(lats), np.nanmax(lats)
+        else:
+            lons, lats = self.get_lonlats()
+            lonmin, lonmax = np.nanmin(lons), np.nanmax(lons)
+            latmin, latmax = np.nanmin(lats), np.nanmax(lats)
+
+        if corners is not None:
+            lonmin, lonmax, latmin, latmax = corners
+
+        # Add buffer
+        lonmin -= buffer * 2
+        lonmax += buffer * 2
+        latmin -= buffer
+        latmax += buffer
+
+        # ---- 2. Figure and Axes setup ------------------------------------
+        meanlat = (latmin + latmax) / 2
+        aspect_ratio = (latmax - latmin) / (lonmax - lonmin) / np.cos(np.radians(meanlat))
+        figsize = kwargs.get('figsize', 11.)
+        if aspect_ratio > 1:
+            fig = plt.figure(figsize=(figsize / aspect_ratio, figsize))
+        else:
+            fig = plt.figure(figsize=(figsize, figsize * aspect_ratio))
+        ax = fig.add_subplot(111)
+
+        # ---- 3. Convert data to GeoDataFrame ------------------------------
+        gdf = gpd.GeoDataFrame(
+            geometry=[Point(xy) for xy in zip(lons.flatten(), lats.flatten())],
+            crs="EPSG:4326"
+        )
+        gdf_web = gdf.to_crs(epsg=4326)
+
+        # ---- 4. Plot trajecrs=gdf_web.crs,ctories -----------------------------------------
+        gdf_web.plot(ax=ax, markersize=1, color='red', alpha=0.6, zorder=10)
+
+        # ---- 5. Basemap from Contextily -----------------------------------
+
+        ctx.add_basemap(ax,  source=ctx.providers.Esri.WorldImagery, attribution_size=6, attribution="© Esri")
+
+        # ---- 6. Overlays: text and boxes ----------------------------------
+        if 'text' in kwargs:
+            texts = kwargs['text']
+            if not isinstance(texts, list):
+                texts = [texts]
+            for te in texts:
+                ax.text(**te)
+
+        if 'box' in kwargs:
+            boxes = kwargs['box']
+            if not isinstance(boxes, list):
+                boxes = [boxes]
+            for bx in boxes:
+                lonmn, lonmx = bx['lon']
+                latmn, latmx = bx['lat']
+                ax.add_patch(plt.Rectangle(
+                    (lonmn, latmn),
+                    lonmx - lonmn,
+                    latmx - latmn,
+                    fill=False,
+                    color=bx.get('color', 'black'),
+                    lw=bx.get('lw', 1),
+                    zorder=20
+                ))
+                if 'text' in bx:
+                    ax.text(lonmn, latmx, bx['text'],
+                            fontsize=bx.get('fontsize', 10),
+                            color=bx.get('color', 'black'))
+
+        # ---- 7. Formatting ------------------------------------------------
+        ax.set_xlabel("Longitude")
+        ax.set_ylabel("Latitude")
+        ax.set_title(kwargs.get('title', 'Trajectory Map'))
+        ax.grid(True, alpha=0.3)
+
+        fig.tight_layout()
+
+        # ---- 8. Compute indices (compatibility) ----------------------------
+        try:
+            firstlast = np.ma.notmasked_edges(lons, axis=1)
+            index_of_first = firstlast[0][1]
+            index_of_last = firstlast[1][1]
+        except Exception:
+            index_of_first, index_of_last = None, None
+
+        # ---- 9. Create dummy CRS placeholder -------------------------------
+        crs = "EPSG:4326"  # Contextily uses Web Mercator
+
+        # ---- 10. Return consistent output ---------------------------------
+        return fig, ax, crs, lons.T, lats.T, index_of_first, index_of_last
+        
+
     def get_lonlats(self):
         if self.history is not None:
             lons = self.history['lon']
@@ -2640,9 +2752,16 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
 
         # Find map coordinates and plot points with empty data
         fig, ax, crs, x, y, index_of_first, index_of_last = \
-            self.set_up_map(buffer=buffer, corners=corners, lscale=lscale,
+            self.set_up_map_ctx(buffer=buffer, corners=corners, lscale=lscale,
                             fast=fast, hide_landmask=hide_landmask, **kwargs)
-
+        # ctx.add_basemap(
+        #         ax,
+        #         crs="EPSG:4326",
+        #         source=ctx.providers.Esri.WorldImagery,
+        #         attribution_size=6,
+        #         attribution="Source: Esri World Imagery",
+        #     )
+        import pdb;pdb.set_trace()
         gcrs = ccrs.PlateCarree(globe=crs.globe)
 
         def plot_timestep(i):
@@ -3394,7 +3513,7 @@ class OpenDriftSimulation(PhysicsMethods, Timeable, Configurable):
                                                       tlatmax)
 
         fig, ax, crs, x, y, index_of_first, index_of_last = \
-            self.set_up_map(buffer=buffer, corners=corners, lscale=lscale, fast=fast, hide_landmask=hide_landmask, **kwargs)
+            self.set_up_map_ctx(buffer=buffer, corners=corners, lscale=lscale, fast=fast, hide_landmask=hide_landmask, **kwargs)
 
         # x, y are longitude, latitude -> i.e. in a PlateCarree CRS
         gcrs = ccrs.PlateCarree(globe=crs.globe)

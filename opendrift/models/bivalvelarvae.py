@@ -21,13 +21,12 @@
 
 import numpy as np
 from opendrift.models.oceandrift import OceanDrift, Lagrangian3DArray
-from shapely.geometry import Polygon, Point, MultiPolygon,asPolygon # added for settlement in polygon only
+from shapely.geometry import Polygon, Point, MultiPolygon # added for settlement in polygon only
 import shapely
-import shapely.vectorized
 import random
 from sklearn.neighbors import BallTree
 import logging; logger = logging.getLogger(__name__)
-
+from opendrift.config import CONFIG_LEVEL_ESSENTIAL, CONFIG_LEVEL_BASIC, CONFIG_LEVEL_ADVANCED
 
 class BivalveLarvae(OceanDrift):
     """Buoyant particle trajectory model based on the OpenDrift framework.
@@ -85,7 +84,7 @@ class BivalveLarvae(OceanDrift):
     # required_profiles = ['ocean_vertical_diffusivity']
 
     # The depth range (in m) which profiles shall cover
-    required_profiles_z_range = [-200, 0]
+    # required_profiles_z_range = [-200, 0]
 
     # Default colors for plotting
     status_colors = {'initial': 'green', 'active': 'blue',
@@ -107,10 +106,10 @@ class BivalveLarvae(OceanDrift):
         # add config spec
         self._add_config({ 'biology:min_settlement_age_seconds': {'type': 'float', 'default': 0.0,'min': 0.0, 'max': 1.0e10, 'units': 'seconds',
                            'description': 'minimum age in seconds at which larvae can start to settle on seabed or stick to shoreline)',
-                           'level': self.CONFIG_LEVEL_BASIC}})
+                           'level': CONFIG_LEVEL_BASIC}})
         self._add_config({ 'biology:settlement_in_habitat': {'type': 'bool', 'default': False,
                            'description': 'settlement restricted to suitable user-defined habitat only ',
-                           'level': self.CONFIG_LEVEL_BASIC}})
+                           'level': CONFIG_LEVEL_BASIC}})
 
     def sea_surface_height(self):
         '''fetches sea surface height for presently active elements
@@ -126,7 +125,7 @@ class BivalveLarvae(OceanDrift):
                     self.environment.sea_surface_height
         if 'sea_surface_height' not in locals():
             env, env_profiles, missing = \
-                self.get_environment(['sea_surface_height'],
+                self.env.get_environment(['sea_surface_height'],
                                      time=self.time, lon=self.elements.lon,
                                      lat=self.elements.lat,
                                      z=0*self.elements.lon, profiles=None)
@@ -177,7 +176,7 @@ class BivalveLarvae(OceanDrift):
             for cnt, _id_i in enumerate(id_nans[:-1]):
                 # The shapely.geometry.asShape() family of functions can be used to wrap Numpy coordinate arrays
                 # https://shapely.readthedocs.io/en/latest/manual.html
-                shape_i = asPolygon(polys[id_nans[cnt] + 1:id_nans[cnt + 1] - 1, :])
+                shape_i = Polygon(polys[id_nans[cnt] + 1:id_nans[cnt + 1] - 1, :])
                 polyList.append(shape_i)
                 self.centers_habitat.append(shape_i.centroid.coords[0]) # Compute centroid and return a [lon, lat] list
 
@@ -292,13 +291,15 @@ class BivalveLarvae(OceanDrift):
 
         if final is True:  # Get land_binary_mask for final location
             en, en_prof, missing = \
-                self.get_environment(['land_binary_mask'],
+                self.env.get_environment(['land_binary_mask',
+                                         'x_sea_water_velocity',
+                                         'y_sea_water_velocity'],
                                      self.time,
                                      self.elements.lon,
                                      self.elements.lat,
                                      self.elements.z,
                                      None)
-            self.environment.land_binary_mask = en.land_binary_mask
+            self.environment.land_binary_mask = en['land_binary_mask']
 
         # if i == 'previous':  # Go back to previous position (in water)
         # previous_position_if = self.previous_position_if()
